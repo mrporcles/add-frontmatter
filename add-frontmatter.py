@@ -91,7 +91,7 @@ def add_frontmatter(files, args):
         files {list} -- The path to the markdown file/s to be processed
         args -- List of runtime arguments
     """
-    template_str = ''.join(open(os.path.abspath("./template.j2"), "r").readlines())
+    template_str = ''.join(open(os.path.abspath(os.path.dirname(__file__) + "/template.j2"), "r").readlines())
     for file in files:
         bakfilename = os.path.basename(file) + '.bak'
         bakfile = os.path.join(os.path.dirname(file), bakfilename)
