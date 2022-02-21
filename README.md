@@ -74,6 +74,6 @@ A couple of configuration options are available based on the parameters passed.
 
 By default every modified markdown file is backed up to the same location with the .bak extension. If you would prefer not to backup these files you can use the --nobackup option.
 
-# Page Hierarchy
+## Page Hierarchy
 
 By default the base pages titles will be numbered to allow them to be synced to the root of a Confluence space. IE: They will have no parent. If you want them to have a single parent based on the Hugo site name then you can use the --root option.
