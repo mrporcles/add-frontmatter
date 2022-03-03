@@ -28,6 +28,7 @@ num_title_list = []
 
 
 SUPPORTED_FORMATS = ['.md']
+DIFF_FILES = ['.diff']
 
 def find_sub_dirs(path, depth=1):
     path = Path(path)
@@ -104,10 +105,11 @@ def add_frontmatter(files, args):
                     shutil.copyfile(file,bakfile)
                 pfm = frontmatter.load(parentpath)
                 cfm = frontmatter.load(file)
-                num_ctitle = populate_title(file)
-                cfm['title'] = num_ctitle
-                num_ptitle = populate_title(parentpath)
-                pfm['title']= num_ptitle
+                if args.number:
+                    num_ctitle = populate_title(file)
+                    cfm['title'] = num_ctitle
+                    num_ptitle = populate_title(parentpath)
+                    pfm['title']= num_ptitle
                 proc = EditFrontMatter(file_path=file, template_str=template_str)
                 proc.run({'title': cfm['title'],'parent': pfm['title'] })
                 log.info(f'Writing frontmatter for {file}')
@@ -116,13 +118,15 @@ def add_frontmatter(files, args):
                 if not os.path.exists(bakfile) and not args.nobackup:
                     shutil.copyfile(file,bakfile)
                 cfm = frontmatter.load(file)
-                num_ctitle = populate_title(file)
-                cfm['title'] = num_ctitle
+                if args.number:
+                    num_ctitle = populate_title(file)
+                    cfm['title'] = num_ctitle
                 proc = EditFrontMatter(file_path=file, template_str=template_str)
                 if args.root:
                     pfm = frontmatter.load(parentpath)
-                    num_ptitle = populate_title(parentpath)
-                    pfm['title']= num_ptitle
+                    if args.number:
+                        num_ptitle = populate_title(parentpath)
+                        pfm['title']= num_ptitle
                     proc.run({'title': cfm['title'],'parent': pfm['title'] })
                     log.info(f'Writing frontmatter for {file}')
                     proc.writeFile(file)
@@ -137,10 +141,11 @@ def add_frontmatter(files, args):
             parentpath = os.path.join(path.parents[0], "_index.md")
             pfm = frontmatter.load(parentpath)
             cfm = frontmatter.load(file)
-            num_ctitle = populate_title(file)
-            cfm['title'] = num_ctitle
-            num_ptitle = populate_title(parentpath)
-            pfm['title']= num_ptitle
+            if args.number:
+                num_ctitle = populate_title(file)
+                cfm['title'] = num_ctitle
+                num_ptitle = populate_title(parentpath)
+                pfm['title']= num_ptitle
             proc = EditFrontMatter(file_path=file, template_str=template_str)
             proc.run({'title': cfm['title'],'parent': pfm['title'] })
             log.info(f'Writing frontmatter for {file}')
@@ -150,8 +155,9 @@ def add_frontmatter(files, args):
                 shutil.copyfile(file,bakfile)
             cfm = frontmatter.load(file)
             if args.root:
-                num_ctitle = populate_title(file)
-                cfm['title'] = num_ctitle
+                if args.number:
+                    num_ctitle = populate_title(file)
+                    cfm['title'] = num_ctitle
             proc = EditFrontMatter(file_path=file, template_str=template_str)
             proc.run({'title': cfm['title'] })
             log.info(f'Writing frontmatter for {file}')
@@ -180,6 +186,24 @@ def parse_args():
         dest='nobackup',
         action='store_true',
         help='Does not create backups of all modified files'
+    )
+    parser.add_argument(
+        '--number',
+        dest='number',
+        action='store_true',
+        help='Adds numbering to the titles in the frontmatter'
+    )
+    parser.add_argument(
+        '--force',
+        dest='force',
+        action='store_true',
+        help='Forces overwrite of the frontmatter if it already exists'
+    )
+    parser.add_argument(
+        '--diff',
+        dest='diff',
+        action='store_true',
+        help='Forces overwrite of the frontmatter from a matching diff file in same directory'
     )
     parser.add_argument(
         '--dryrun',
@@ -225,20 +249,75 @@ def main():
                 changed_posts.remove(f'{filepath}')
             elif not filepath.startswith(f'{args.dir}/content/'):
                 changed_posts.remove(f'{filepath}')
+
     else:
         log.info('No pages found in input source')
         return
-    
-    add_numbering(changed_posts,args)
+
+    if not args.force:
+        for p in changed_posts[:]:
+            fm = frontmatter.load(p)
+            try:
+                test = fm['wiki']
+            except:
+                log.info(f'{p} set to be processed as it contains no Wiki frontmatter')
+            else:
+                changed_posts.remove(p)    
+
+    if args.number:
+        add_numbering(changed_posts,args)
     add_frontmatter(changed_posts, args)
+  
+    if args.diff:  
+        diff_posts = [
+              os.path.join(path, name) for path, subdirs, files in os.walk(args.dir) for name in files
+          ]
+        log.info('\n\n')
+        log.info('Processing any existing diff files ........')        
+        for filepath in diff_posts[:]:
+            _,ext = os.path.splitext(f'{filepath}')     
+            if ext not in DIFF_FILES or not filepath.startswith(f'{args.dir}/content/'):
+                diff_posts.remove(f'{filepath}')
+        for filepath in diff_posts[:]:
+            file,ext = os.path.splitext(f'{filepath}')
+            if file in changed_posts:
+                template_str = ''.join(open(os.path.abspath(os.path.dirname(__file__) + "/template-diff.j2"), "r").readlines())
+                difffm = frontmatter.load(filepath)
+                origfm = frontmatter.load(file)
+                try:
+                    test = difffm['wiki']
+                except:
+                    log.info(f'{filepath} No Wiki frontmatter in diff file. Ignoring.')
+                else:
+                    if difffm['wiki'].get('title') == None:
+                        log.info(f'{filepath} - No Wiki title frontmatter tag in diff file. Ignoring.')
+                    else:
+                        origfm['wiki']['title'] = difffm['wiki'].get('title')
+                    
+                    if difffm['wiki'].get('parent') == None:
+                        log.info(f'{filepath} - No Wiki parent frontmatter tag in diff file. Ignoring.')
+                    else:
+                        origfm['wiki']['parent'] = difffm['wiki'].get('parent')
+                    
+                    if difffm['wiki'].get('share') == None:
+                        log.info(f'{filepath} - No Wiki share frontmatter tag in diff file. Ignoring.')
+                    else:
+                        origfm['wiki']['share'] = difffm['wiki'].get('share')
+                    
+                    proc = EditFrontMatter(file_path=file, template_str=template_str)
+                    proc.run({'share': (str(origfm['wiki'].get('share')).lower()),'title': origfm['wiki'].get('title'),'parent': origfm['wiki'].get('parent')})
+                    log.info(f'Writing diff frontmatter from {filepath} to {file}')
+                    proc.writeFile(file)
+        log.info(f'Diff processing complete for {len(diff_posts)} diff files')
 
     seen = set()
-    for p in changed_posts:
-            fm = frontmatter.load(p)
-            if fm['wiki'].get('title') not in seen:
-                seen.add(fm['wiki'].get('title'))
-            else:
-                skippedpages.append('"' + fm['wiki'].get('title') + '"' + ' at ' + p)
+    for p in changed_posts[:]:
+        fm = frontmatter.load(p)
+        if fm['wiki'].get('title') not in seen:
+            seen.add(fm['wiki'].get('title'))
+        else:
+            skippedpages.append('"' + fm['wiki'].get('title') + '"' + ' at ' + p)
+
             
     if len(skippedpages) > 0:
         log.info('\n\n')
